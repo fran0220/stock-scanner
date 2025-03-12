@@ -6,33 +6,15 @@ import requests
 from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 import logging
+from base_analyzer import BaseAnalyzer
 
-class StockAnalyzer:
+class StockAnalyzer(BaseAnalyzer):
     def __init__(self, initial_cash=1000000):
-        # 设置日志
-        logging.basicConfig(level=logging.INFO,
-                          format='%(asctime)s - %(levelname)s - %(message)s')
-        self.logger = logging.getLogger(__name__)
+        # 调用父类的初始化方法
+        super().__init__()
         
-        # 加载环境变量
-        load_dotenv()
-        
-        # 设置 Gemini API
-        self.gemini_api_url = "https://api.xxx.xxx"
-        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
-        
-        # 配置参数
-        self.params = {
-            'ma_periods': {'short': 5, 'medium': 20, 'long': 60},
-            'rsi_period': 14,
-            'bollinger_period': 20,
-            'bollinger_std': 2,
-            'volume_ma_period': 20,
-            'atr_period': 14
-        }
-        
-    def get_stock_data(self, stock_code, start_date=None, end_date=None):
-        """获取股票数据"""
+    def get_stock_data(self, stock_code, market='A', start_date=None, end_date=None):
+        """获取股票数据，支持A股、美股和港股"""
         import akshare as ak
         
         if start_date is None:
@@ -41,21 +23,56 @@ class StockAnalyzer:
             end_date = datetime.now().strftime('%Y%m%d')
             
         try:
-            # 使用 akshare 获取股票数据
-            df = ak.stock_zh_a_hist(symbol=stock_code, 
-                                  start_date=start_date, 
-                                  end_date=end_date,
-                                  adjust="qfq")
+            df = None
             
-            # 重命名列名以匹配分析需求
-            df = df.rename(columns={
-                "日期": "date",
-                "开盘": "open",
-                "收盘": "close",
-                "最高": "high",
-                "最低": "low",
-                "成交量": "volume"
-            })
+            # 根据市场类型获取数据
+            if market == 'A':
+                # A股数据
+                df = ak.stock_zh_a_hist(symbol=stock_code, 
+                                      start_date=start_date, 
+                                      end_date=end_date,
+                                      adjust="qfq")
+                
+                # 重命名列名以匹配分析需求
+                df = df.rename(columns={
+                    "日期": "date",
+                    "开盘": "open",
+                    "收盘": "close",
+                    "最高": "high",
+                    "最低": "low",
+                    "成交量": "volume"
+                })
+                
+            elif market == 'US':
+                # 美股数据
+                df = ak.stock_us_daily(symbol=stock_code, adjust="qfq")
+                
+                # 重命名列以匹配分析需求
+                df = df.rename(columns={
+                    "date": "date",
+                    "open": "open",
+                    "close": "close",
+                    "high": "high",
+                    "low": "low",
+                    "volume": "volume"
+                })
+                
+            elif market == 'HK':
+                # 港股数据
+                df = ak.stock_hk_daily(symbol=stock_code, adjust="qfq")
+                
+                # 重命名列以匹配分析需求
+                df = df.rename(columns={
+                    "date": "date",
+                    "open": "open",
+                    "close": "close",
+                    "high": "high",
+                    "low": "low",
+                    "volume": "volume"
+                })
+                
+            else:
+                raise ValueError(f"不支持的市场类型: {market}")
             
             # 确保日期格式正确
             df['date'] = pd.to_datetime(df['date'])
@@ -73,6 +90,171 @@ class StockAnalyzer:
             self.logger.error(f"获取股票数据失败: {str(e)}")
             raise Exception(f"获取股票数据失败: {str(e)}")
             
+    def analyze_stock(self, stock_code, market='A'):
+        """分析股票，支持不同市场"""
+        try:
+            # 获取股票数据
+            df = self.get_stock_data(stock_code, market)
+            
+            # 计算技术指标
+            df = self.calculate_indicators(df)
+            
+            # 评分系统
+            score = self.calculate_score(df)
+            
+            # 获取最新数据
+            latest = df.iloc[-1]
+            prev = df.iloc[-2]
+            
+            # 获取股票名称
+            stock_name = self.get_stock_name(stock_code, market)
+            
+            # 生成报告
+            report = {
+                'stock_code': stock_code,
+                'market': market,
+                'stock_name': stock_name,
+                'analysis_date': datetime.now().strftime('%Y-%m-%d'),
+                'score': score,
+                'price': latest['close'],
+                'price_change': (latest['close'] - prev['close']) / prev['close'] * 100,
+                'ma_trend': 'UP' if latest['MA5'] > latest['MA20'] else 'DOWN',
+                'rsi': latest['RSI'],
+                'macd_signal': 'BUY' if latest['MACD'] > latest['Signal'] else 'SELL',
+                'volume_status': 'HIGH' if latest['Volume_Ratio'] > 1.5 else 'NORMAL',
+                'recommendation': self.get_recommendation(score),
+                'ai_analysis': self.get_ai_analysis(df, stock_code, 'stock')
+            }
+            
+            return report
+            
+        except Exception as e:
+            self.logger.error(f"分析股票时出错: {str(e)}")
+            raise
+    
+            return stock_code
+    def get_stock_name(self, stock_code, market='A'):
+        """获取股票名称，支持本地缓存和网络错误处理"""
+        import akshare as ak
+        import json
+        import os
+        
+        # 定义缓存文件路径
+        cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache')
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f'stock_names_{market}.json')
+        
+        # 尝试从缓存加载
+        stock_names = {}
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    stock_names = json.load(f)
+                    if stock_code in stock_names:
+                        self.logger.info(f"从缓存获取股票名称: {stock_code} -> {stock_names[stock_code]}")
+                        return stock_names[stock_code]
+            except Exception as e:
+                self.logger.warning(f"读取股票名称缓存失败: {str(e)}")
+        
+        # 缓存中没有，尝试从网络获取
+        try:
+            name = None
+            if market == 'A':
+                # 获取A股股票名称
+                stock_info_df = ak.stock_info_a_code_name()
+                filtered = stock_info_df[stock_info_df['code'] == stock_code]
+                if not filtered.empty:
+                    name = filtered.iloc[0]['name']
+                
+            elif market == 'US':
+                # 获取美股股票名称
+                stock_info_df = ak.stock_us_fundamental()
+                filtered = stock_info_df[stock_info_df['symbol'] == stock_code]
+                if not filtered.empty:
+                    name = filtered.iloc[0]['cname']
+                
+            elif market == 'HK':
+                # 获取港股股票名称
+                stock_info_df = ak.stock_hk_spot_em()
+                filtered = stock_info_df[stock_info_df['代码'] == stock_code]
+                if not filtered.empty:
+                    name = filtered.iloc[0]['名称']
+            
+            # 如果找到名称，更新缓存
+            if name:
+                stock_names[stock_code] = name
+                try:
+                    with open(cache_file, 'w', encoding='utf-8') as f:
+                        json.dump(stock_names, f, ensure_ascii=False, indent=2)
+                    self.logger.info(f"更新股票名称缓存: {stock_code} -> {name}")
+                except Exception as e:
+                    self.logger.warning(f"更新股票名称缓存失败: {str(e)}")
+                return name
+            
+            # 如果找不到名称，使用默认名称
+            default_name = f"{market}股票-{stock_code}"
+            self.logger.warning(f"无法获取股票名称，使用默认名称: {default_name}")
+            return default_name
+            
+        except Exception as e:
+            self.logger.error(f"获取股票名称失败: {str(e)}")
+            # 网络错误时使用默认名称
+            default_name = f"{market}股票-{stock_code}"
+            self.logger.warning(f"由于网络错误，使用默认名称: {default_name}")
+            return default_name
+            
+    def scan_market(self, stock_list=None, market='A', min_score=60):
+        """扫描市场，寻找符合条件的股票"""
+        if stock_list is None:
+            # 如果没有提供股票列表，获取市场所有股票
+            stock_list = self.get_market_stocks(market)
+            
+        recommendations = []
+        
+        total = len(stock_list)
+        for i, stock_code in enumerate(stock_list):
+            try:
+                report = self.analyze_stock(stock_code, market)
+                if report['score'] >= min_score:
+                    recommendations.append(report)
+                # 打印进度
+                if (i + 1) % 10 == 0 or (i + 1) == total:
+                    self.logger.info(f"已分析 {i + 1}/{total} 只股票")
+            except Exception as e:
+                self.logger.error(f"分析股票 {stock_code} 时出错: {str(e)}")
+                continue
+                
+        # 按得分排序
+        recommendations.sort(key=lambda x: x['score'], reverse=True)
+        return recommendations
+    
+    def get_market_stocks(self, market='A'):
+        """获取市场所有股票代码"""
+        import akshare as ak
+        
+        try:
+            if market == 'A':
+                # 获取A股所有股票
+                stock_info_df = ak.stock_info_a_code_name()
+                return stock_info_df['code'].tolist()
+                
+            elif market == 'US':
+                # 获取美股所有股票
+                stock_info_df = ak.stock_us_fundamental()
+                return stock_info_df['symbol'].tolist()
+                
+            elif market == 'HK':
+                # 获取港股所有股票
+                stock_info_df = ak.stock_hk_spot_em()
+                return stock_info_df['代码'].tolist()
+                
+            else:
+                raise ValueError(f"不支持的市场类型: {market}")
+                
+        except Exception as e:
+            self.logger.error(f"获取市场股票列表失败: {str(e)}")
+            raise
+
     def calculate_ema(self, series, period):
         """计算指数移动平均线"""
         return series.ewm(span=period, adjust=False).mean()
@@ -119,12 +301,12 @@ class StockAnalyzer:
         """计算技术指标"""
         try:
             # 计算移动平均线
-            df['MA5'] = self.calculate_ema(df['close'], self.params['ma_periods']['short'])
-            df['MA20'] = self.calculate_ema(df['close'], self.params['ma_periods']['medium'])
-            df['MA60'] = self.calculate_ema(df['close'], self.params['ma_periods']['long'])
+            df['MA5'] = self.calculate_ema(df['close'], 5)
+            df['MA20'] = self.calculate_ema(df['close'], 20)
+            df['MA60'] = self.calculate_ema(df['close'], 60)
             
             # 计算RSI
-            df['RSI'] = self.calculate_rsi(df['close'], self.params['rsi_period'])
+            df['RSI'] = self.calculate_rsi(df['close'], 14)
             
             # 计算MACD
             df['MACD'], df['Signal'], df['MACD_hist'] = self.calculate_macd(df['close'])
@@ -132,16 +314,16 @@ class StockAnalyzer:
             # 计算布林带
             df['BB_upper'], df['BB_middle'], df['BB_lower'] = self.calculate_bollinger_bands(
                 df['close'],
-                self.params['bollinger_period'],
-                self.params['bollinger_std']
+                20,
+                2
             )
             
             # 成交量分析
-            df['Volume_MA'] = df['volume'].rolling(window=self.params['volume_ma_period']).mean()
+            df['Volume_MA'] = df['volume'].rolling(window=20).mean()
             df['Volume_Ratio'] = df['volume'] / df['Volume_MA']
             
             # 计算ATR和波动率
-            df['ATR'] = self.calculate_atr(df, self.params['atr_period'])
+            df['ATR'] = self.calculate_atr(df, 14)
             df['Volatility'] = df['ATR'] / df['close'] * 100
             
             # 动量指标
@@ -187,26 +369,49 @@ class StockAnalyzer:
             self.logger.error(f"计算评分时出错: {str(e)}")
             raise
             
-    def get_ai_analysis(self, df, stock_code):
-        """使用 Gemini 进行 AI 分析"""
+    def get_ai_analysis(self, df, stock_code, stock_type):
+        """使用 OpenAI API 进行 AI 分析"""
         try:
-            recent_data = df.tail(14).to_dict('records')
+            if not self.llm_api_key:
+                self.logger.warning("未配置LLM API密钥，使用本地生成的分析报告")
+                return self._generate_local_analysis(df, stock_code, stock_type)
+                
+            # 准备数据
+            recent_data = df.tail(14).copy()
+            # 将日期转换为字符串
+            if 'date' in recent_data.columns:
+                recent_data['date'] = recent_data['date'].dt.strftime('%Y-%m-%d')
             
+            # 提取关键指标
+            latest = df.iloc[-1]
             technical_summary = {
-                'trend': 'upward' if df.iloc[-1]['MA5'] > df.iloc[-1]['MA20'] else 'downward',
-                'volatility': f"{df.iloc[-1]['Volatility']:.2f}%",
-                'volume_trend': 'increasing' if df.iloc[-1]['Volume_Ratio'] > 1 else 'decreasing',
-                'rsi_level': df.iloc[-1]['RSI']
+                'trend': 'upward' if latest['MA5'] > latest['MA20'] else 'downward',
+                'volatility': f"{latest['Volatility']:.2f}%",
+                'volume_trend': 'increasing' if latest['Volume_Ratio'] > 1 else 'decreasing',
+                'rsi_level': f"{latest['RSI']:.2f}",
+                'macd_signal': 'BUY' if latest['MACD'] > latest['Signal'] else 'SELL',
+                'price': f"{latest['close']:.2f}",
+                'price_change': f"{(latest['close'] - df.iloc[-2]['close']) / df.iloc[-2]['close'] * 100:.2f}%"
             }
             
+            # 构建提示词
             prompt = f"""
-            分析股票 {stock_code}：
+            分析{stock_type} {stock_code}：
 
             技术指标概要：
-            {technical_summary}
+            - 趋势: {technical_summary['trend']}
+            - 波动率: {technical_summary['volatility']}
+            - 成交量趋势: {technical_summary['volume_trend']}
+            - RSI水平: {technical_summary['rsi_level']}
+            - MACD信号: {technical_summary['macd_signal']}
+            - 当前价格: {technical_summary['price']}
+            - 价格变动: {technical_summary['price_change']}
             
-            近14日交易数据：
-            {recent_data}
+            近14日交易数据摘要：
+            - 最高价: {recent_data['high'].max():.2f}
+            - 最低价: {recent_data['low'].min():.2f}
+            - 平均成交量: {recent_data['volume'].mean():.2f}
+            - 平均波动率: {recent_data['Volatility'].mean():.2f}%
             
             请提供：
             1. 趋势分析（包含支撑位和压力位）
@@ -219,27 +424,16 @@ class StockAnalyzer:
             请基于技术指标和市场动态进行分析，给出具体数据支持。
             """
             
-            headers = {
-                "Authorization": f"Bearer {self.gemini_api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            data = {
-                "model": "gemini-1.5-flash",
-                "messages": [{"role": "user", "content": prompt}]
-            }
-            
-            response = requests.post(
-                f"{self.gemini_api_url}/v1/chat/completions",
-                headers=headers,
-                json=data,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content']
+            # 根据API类型构建请求
+            if self.llm_api_type.lower() == 'openai':
+                return self._call_openai_api(prompt)
+            elif self.llm_api_type.lower() == 'azure':
+                return self._call_azure_openai_api(prompt)
+            elif self.llm_api_type.lower() == 'custom':
+                return self._call_custom_api(prompt)
             else:
-                return "AI 分析暂时无法使用"
+                self.logger.warning(f"不支持的API类型: {self.llm_api_type}，使用本地生成的分析报告")
+                return self._generate_local_analysis(df, stock_code, stock_type)
                 
         except Exception as e:
             self.logger.error(f"AI 分析发生错误: {str(e)}")
@@ -257,57 +451,3 @@ class StockAnalyzer:
             return '建议卖出'
         else:
             return '强烈建议卖出'
-            
-    def analyze_stock(self, stock_code):
-        """分析单个股票"""
-        try:
-            # 获取股票数据
-            df = self.get_stock_data(stock_code)
-            
-            # 计算技术指标
-            df = self.calculate_indicators(df)
-            
-            # 评分系统
-            score = self.calculate_score(df)
-            
-            # 获取最新数据
-            latest = df.iloc[-1]
-            prev = df.iloc[-2]
-            
-            # 生成报告（保持原有格式）
-            report = {
-                'stock_code': stock_code,
-                'analysis_date': datetime.now().strftime('%Y-%m-%d'),
-                'score': score,
-                'price': latest['close'],
-                'price_change': (latest['close'] - prev['close']) / prev['close'] * 100,
-                'ma_trend': 'UP' if latest['MA5'] > latest['MA20'] else 'DOWN',
-                'rsi': latest['RSI'],
-                'macd_signal': 'BUY' if latest['MACD'] > latest['Signal'] else 'SELL',
-                'volume_status': 'HIGH' if latest['Volume_Ratio'] > 1.5 else 'NORMAL',
-                'recommendation': self.get_recommendation(score),
-                'ai_analysis': self.get_ai_analysis(df, stock_code)
-            }
-            
-            return report
-            
-        except Exception as e:
-            self.logger.error(f"分析股票时出错: {str(e)}")
-            raise
-            
-    def scan_market(self, stock_list, min_score=60):
-        """扫描市场，寻找符合条件的股票"""
-        recommendations = []
-        
-        for stock_code in stock_list:
-            try:
-                report = self.analyze_stock(stock_code)
-                if report['score'] >= min_score:
-                    recommendations.append(report)
-            except Exception as e:
-                self.logger.error(f"分析股票 {stock_code} 时出错: {str(e)}")
-                continue
-                
-        # 按得分排序
-        recommendations.sort(key=lambda x: x['score'], reverse=True)
-        return recommendations

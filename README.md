@@ -1,90 +1,103 @@
-# 股票分析系统 (Stock Analysis System)
-## 提要
-stock_analyzer.py是gui界面分析a股的关键文件，在21-22行中记得填入apiurl防止无法使用ai分析
-## 特殊情况
-这种情况下为正常
-![image](https://github.com/user-attachments/assets/1b276236-10bc-45a0-aa12-ac0bd6a5ce9c)
+# 股票与期货分析系统
 
-## 项目简介 (Project Overview)
+一个全面的股票和期货分析系统，支持A股、美股、港股以及国内外期货市场的技术分析。
 
-这是一个专业的A股股票分析系统，提供全面的技术指标分析和投资建议。系统包括三个主要组件：
-- 单股票分析GUI
-- 批量股票扫描器
-- 高级技术指标分析引擎
+## 功能特点
 
-This is a professional A-share stock analysis system that provides comprehensive technical indicator analysis and investment recommendations. The system includes three main components:
-- Single Stock Analysis GUI
-- Batch Stock Scanner
-- Advanced Technical Indicator Analysis Engine
+- **多市场支持**：分析A股、美股、港股和期货市场
+- **技术指标分析**：MA、RSI、MACD等常用技术指标
+- **期货特有指标**：持仓量变化、价格动量分析
+- **批量分析**：支持批量分析多只股票或期货
+- **AI辅助分析**：提供智能分析建议
+- **现代化界面**：响应式设计，支持移动端和桌面端
 
-## 功能特点 (Key Features)
+## 系统架构
 
-### 单股票分析 (Single Stock Analysis)
-- 实时计算多种技术指标
-- 生成详细的股票分析报告
-- 提供投资建议
-- 支持单股和批量分析
+- **后端**：Python，基于Flask提供RESTful API
+- **前端**：Next.js + React + TypeScript，使用Tailwind CSS进行样式设计
+- **数据源**：支持多种数据源接入
 
-### 全市场扫描 (Market-Wide Scanning)
-- 扫描全部A股股票
-- 根据多维度技术指标进行评分
-- 筛选高潜力股票
-- 按价格区间生成分析报告
+## 安装与运行
 
-## 技术指标 (Technical Indicators)
-- 移动平均线 (Moving Average)
-- RSI (Relative Strength Index)
-- MACD (Moving Average Convergence Divergence)
-- 布林带 (Bollinger Bands)
-- 能量潮指标 (OBV)
-- 随机指标 (Stochastic Oscillator)
-- 平均真实波动范围 (ATR)
+### 前提条件
 
-## 系统依赖 (System Dependencies)
 - Python 3.8+
-- PyQt6
-- Pandas
-- NumPy
-- AkShare
-- Markdown2
+- Node.js 16+
+- npm 8+
 
-## 快速开始 (Quick Start)
+### 安装步骤
 
-### 安装依赖 (Install Dependencies)
+1. 克隆仓库
+```bash
+git clone https://github.com/yourusername/stock-scanner.git
+cd stock-scanner
+```
+
+2. 安装Python依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-### 运行应用 (Run Application)
-#### 单股票分析GUI
+3. 安装前端依赖
 ```bash
-python gui2.py
+cd frontend
+npm install
+cd ..
 ```
 
-#### 全市场股票扫描
+4. 配置环境变量
 ```bash
-python 全部股票分析推荐1.py
+cp .env.example .env
+# 编辑.env文件，设置必要的环境变量
 ```
 
-## 配置 (Configuration)
-- 在 `.env` 文件中配置 Gemini API 密钥
-- 可在 `stock_analyzer.py` 中调整技术指标参数
+### 运行系统
 
-## 输出 (Outputs)
-分析结果将保存在 `scanner` 目录下：
-- `price_XX_YY.txt`：按价格区间的详细分析
-- `summary.txt`：市场扫描汇总报告
+使用提供的启动脚本一键启动整个系统：
 
-## 注意事项 (Notes)
-- 股票分析仅供参考，不构成投资建议
-- 使用前请确保网络连接正常
-- 建议在实盘前充分测试
+```bash
+chmod +x start.sh
+./start.sh
+```
 
-## 贡献 (Contributing)
-欢迎提交 issues 和 pull requests！
+或者分别启动后端和前端：
 
-## 许可证 (License)
-[待添加具体许可证信息]
+1. 启动后端API服务器
+```bash
+python api_server.py
+```
 
-## 免责声明 (Disclaimer)
-本系统仅用于学习和研究目的，投资有风险，入市需谨慎。
+2. 启动前端开发服务器
+```bash
+cd frontend
+npm run dev
+```
+
+访问 http://localhost:3000 即可使用系统。
+
+## API文档
+
+后端API文档可通过访问 http://localhost:8000/docs 获取。
+
+主要API端点：
+
+- `/api/stock/analyze` - 分析单只股票
+- `/api/stock/batch-analyze` - 批量分析股票
+- `/api/futures/analyze` - 分析单个期货
+- `/api/futures/batch-analyze` - 批量分析期货
+
+## 开发指南
+
+### 添加新的技术指标
+
+1. 在 `base_analyzer.py` 中添加新的技术指标计算方法
+2. 在 `stock_analyzer.py` 或 `futures_analyzer.py` 中使用新指标
+
+### 添加新的市场支持
+
+1. 在相应的分析器类中添加新市场的数据获取和处理逻辑
+2. 更新前端界面以支持新市场
+
+## 许可证
+
+MIT

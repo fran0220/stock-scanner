@@ -15,6 +15,14 @@ markdown2==2.5.3
 requests==2.32.3
 python-dotenv==1.0.1
 
+# Web API服务器
+fastapi==0.112.0
+uvicorn==0.30.1
+pydantic==2.7.1
+
+# 跨域资源共享
+starlette>=0.37.2,<0.38.0
+
 # 日志和系统工具
 loguru==0.7.2
 
